@@ -14,7 +14,7 @@ from collections import defaultdict
 from pathlib import Path
 
 RAW = Path(__file__).parent.parent / "data" / "raw" / "ikea_furniture_raw.csv"
-OUT = Path(__file__).parent.parent / "data" / "processed" / "products.csv"
+OUT = Path(__file__).parent.parent / "data" / "processed" / "products_sa_furniture_extract.csv"
 
 # Some raw rows have a scraping artifact where "designer" holds an item-number
 # prefix plus marketing blurb text instead of an actual designer name, e.g.

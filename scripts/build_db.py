@@ -17,20 +17,24 @@ DB_PATH = BASE / "data" / "konneksjons.db"
 
 SCHEMA = """
 CREATE TABLE products (
-    product_id          TEXT PRIMARY KEY,
-    name                 TEXT NOT NULL UNIQUE,
-    categories           TEXT,
-    num_categories       INTEGER,
-    num_listings         INTEGER,
-    designers            TEXT,
-    price_min_sar        REAL,
-    price_max_sar        REAL,
-    sellable_online_any  INTEGER,
-    has_color_variants    INTEGER,
-    sample_description   TEXT,
-    sample_link          TEXT,
-    word_count           INTEGER,
-    char_len             INTEGER
+    product_id                TEXT PRIMARY KEY,
+    name                       TEXT NOT NULL UNIQUE,
+    data_sources               TEXT,
+    in_frontiernerds_2010_list INTEGER,
+    categories_sa_furniture    TEXT,
+    designers                  TEXT,
+    price_min_sar              REAL,
+    price_max_sar              REAL,
+    num_listings_sa             INTEGER,
+    departments_us              TEXT,
+    sample_category_path_us     TEXT,
+    price_min_usd                REAL,
+    price_max_usd                REAL,
+    num_listings_us              INTEGER,
+    sample_description           TEXT,
+    sample_link                  TEXT,
+    word_count                   INTEGER,
+    char_len                     INTEGER
 );
 
 CREATE TABLE meanings (
@@ -43,11 +47,13 @@ CREATE TABLE meanings (
 );
 
 CREATE TABLE naming_conventions (
-    category             TEXT PRIMARY KEY,
-    theme_label           TEXT,
-    theme_description     TEXT,
-    confidence            TEXT,
-    sources               TEXT
+    category_system       TEXT NOT NULL,
+    category              TEXT NOT NULL,
+    theme_label            TEXT,
+    theme_description      TEXT,
+    confidence             TEXT,
+    sources                TEXT,
+    PRIMARY KEY (category_system, category)
 );
 
 CREATE TABLE groups (
@@ -70,9 +76,9 @@ CREATE INDEX idx_group_members_product ON group_members(product_id);
 CREATE INDEX idx_groups_type ON groups(grouping_type);
 """
 
-BOOL_COLS = {"sellable_online_any", "has_color_variants"}
-INT_COLS = {"num_categories", "num_listings", "word_count", "char_len"}
-FLOAT_COLS = {"price_min_sar", "price_max_sar"}
+BOOL_COLS = {"in_frontiernerds_2010_list"}
+INT_COLS = {"num_listings_sa", "num_listings_us", "word_count", "char_len"}
+FLOAT_COLS = {"price_min_sar", "price_max_sar", "price_min_usd", "price_max_usd"}
 
 
 def load_csv(path):

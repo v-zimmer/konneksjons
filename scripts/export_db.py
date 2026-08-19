@@ -48,9 +48,12 @@ def main():
 
         print(f"  {table}: {len(rows)} rows -> {csv_path.relative_to(BASE)}")
 
-    wb.save(XLSX_PATH)
+    try:
+        wb.save(XLSX_PATH)
+        print(f"Wrote {XLSX_PATH.relative_to(BASE)}")
+    except PermissionError:
+        print(f"SKIPPED {XLSX_PATH.relative_to(BASE)} - file is open (e.g. in Excel). Close it and rerun this script.")
     conn.close()
-    print(f"Wrote {XLSX_PATH.relative_to(BASE)}")
 
 
 if __name__ == "__main__":
