@@ -1,18 +1,15 @@
-// The second O in KONNEKSJONS gets the two-dot accent. The whole wordmark
-// renders at what used to be just the O's enlarged size (bump the
-// surrounding h1's font-size class to raise this "base"), and the tail
-// "SJONS" rides a symmetric bell curve on top of that base - S and S just a
-// touch bigger, J and N a bit more, Ö biggest at the peak. Shared so the
-// home page and puzzle page headers can't drift from each other.
+// The second O in KONNEKSJONS gets the two-dot accent, and it's the only
+// letter that's enlarged - S, J, and N picked up extra size at one point
+// from an earlier "bell curve" idea across the whole "SJONS" tail, but that
+// read as more letters being bigger than intended, so they're back to the
+// same size as the rest. The whole wordmark still renders at what used to
+// be just the O's enlarged size (the surrounding h1's font-size class was
+// bumped up for that). Shared so the home page and puzzle page headers
+// can't drift from each other.
 export default function Wordmark() {
   return (
     <>
-      KONNEK
-      <span style={{ fontSize: "1.1em" }}>S</span>
-      <span style={{ fontSize: "1.2em" }}>J</span>
-      <span style={{ fontSize: "1.4em" }}>Ö</span>
-      <span style={{ fontSize: "1.2em" }}>N</span>
-      <span style={{ fontSize: "1.1em" }}>S</span>
+      KONNEKSJ<span style={{ fontSize: "1.4em" }}>Ö</span>NS
     </>
   );
 }
