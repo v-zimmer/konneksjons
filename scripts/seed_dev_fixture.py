@@ -1,5 +1,5 @@
 """
-Seed the webapp's local dev database with a small hand-authored fixture.
+Seed a webapp database with a small hand-authored fixture.
 
 This is NOT derived from data/konneksjons.db - it's a standalone mock dataset
 (~10 groups, ~50 words) sized for exercising the puzzle generator and
@@ -10,15 +10,19 @@ dev: mock dataset, not the real pipeline".
 Assumes the target tables already exist - run `pnpm db:push` (from web/) to
 create them from db/schema.ts before running this script.
 
+Targets web/local.db by default. If TURSO_DATABASE_URL (and
+TURSO_AUTH_TOKEN) are set in the environment, targets that Turso database
+instead - e.g. so the freshly-deployed site has something playable.
+
 Reads:
   (nothing - fixture data is defined inline below)
 Writes:
-  web/local.db  (content_words, content_groups, content_group_members,
-                 content_group_conflicts tables only; game-state tables
-                 are left untouched)
+  content_words, content_groups, content_group_members,
+  content_group_conflicts (game-state tables are left untouched)
 """
-import sqlite3
 from pathlib import Path
+
+from turso_http import get_connection
 
 BASE = Path(__file__).parent.parent
 DB_PATH = BASE / "web" / "local.db"
@@ -166,12 +170,7 @@ CONFLICT_PAIRS = [("swedish-place-names", "storage-furniture")]
 
 
 def main():
-    if not DB_PATH.exists():
-        raise SystemExit(
-            f"{DB_PATH} does not exist. Run `pnpm db:push` in web/ first to create the schema."
-        )
-
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection(DB_PATH)
     conn.execute("DELETE FROM content_group_conflicts")
     conn.execute("DELETE FROM content_group_members")
     conn.execute("DELETE FROM content_groups")
