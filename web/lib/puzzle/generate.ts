@@ -61,8 +61,10 @@ export function assignDifficultyTiers(picked: PickedGroup[]): TieredGroup[] {
   });
 }
 
-// Step 3: persist puzzles / puzzle_groups / puzzle_group_members in one
-// transaction, snapshotting display_text at generation time.
+// Step 3: persist puzzles / puzzle_groups / puzzle_group_members, batched
+// into a single network round trip (db.batch - still atomic, all-or-nothing,
+// like the db.transaction() this replaces) rather than 9 sequential awaited
+// inserts. Snapshots display_text at generation time.
 export async function persistPuzzle(
   db: typeof Db,
   params: {
@@ -75,37 +77,40 @@ export async function persistPuzzle(
 ): Promise<void> {
   const { puzzleId, seed, tieredGroups, puzzleType = "procedural", createdBy } = params;
 
-  await db.transaction(async (tx) => {
-    await tx.insert(puzzles).values({
+  const statements = [
+    db.insert(puzzles).values({
       puzzleId,
       puzzleType,
       status: "active",
       seed,
       generatorVersion: GENERATOR_VERSION,
       createdBy,
-    });
-
-    for (const group of tieredGroups) {
+    }),
+    ...tieredGroups.flatMap((group) => {
       const puzzleGroupId = `${puzzleId}-t${group.difficultyTier}`;
-      await tx.insert(puzzleGroups).values({
-        puzzleGroupId,
-        puzzleId,
-        difficultyTier: group.difficultyTier,
-        colorKey: group.colorKey,
-        sourceGroupId: group.groupId,
-        label: group.label,
-        description: group.description,
-      });
-      await tx.insert(puzzleGroupMembers).values(
-        group.words.map((w) => ({
+      return [
+        db.insert(puzzleGroups).values({
           puzzleGroupId,
           puzzleId,
-          wordId: w.wordId,
-          displayText: w.displayText,
-        }))
-      );
-    }
-  });
+          difficultyTier: group.difficultyTier,
+          colorKey: group.colorKey,
+          sourceGroupId: group.groupId,
+          label: group.label,
+          description: group.description,
+        }),
+        db.insert(puzzleGroupMembers).values(
+          group.words.map((w) => ({
+            puzzleGroupId,
+            puzzleId,
+            wordId: w.wordId,
+            displayText: w.displayText,
+          }))
+        ),
+      ];
+    }),
+  ];
+
+  await db.batch(statements as unknown as Parameters<typeof db.batch>[0]);
 }
 
 export class PuzzleGenerationError extends Error {}

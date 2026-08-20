@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { db as Db } from "@/db/client";
 import { puzzles, puzzleGroups, puzzleGroupMembers, gameSessions, solvedPuzzleGroups } from "@/db/schema";
 import { createRng, shuffle } from "./rng";
@@ -33,21 +33,25 @@ export type ClientGameState = {
   revealedGroups?: ClientGroup[];
 };
 
+// One upsert-with-RETURNING instead of select-then-branch-then-select: the
+// DB is remote (Turso), so each avoided round trip is a real network hop
+// saved, not just a query-planner cost. The `set` is a harmless no-op
+// (assigns the column to itself) - its only purpose is to make SQLite treat
+// the conflicting row as "updated" so RETURNING still yields it.
 export async function getOrCreateSession(db: typeof Db, playerId: string, puzzleId: string) {
   const [puzzle] = await db.select().from(puzzles).where(eq(puzzles.puzzleId, puzzleId)).limit(1);
   if (!puzzle) throw new PuzzleNotFoundError(`Puzzle ${puzzleId} not found`);
 
-  const [existing] = await db
-    .select()
-    .from(gameSessions)
-    .where(and(eq(gameSessions.puzzleId, puzzleId), eq(gameSessions.playerId, playerId)))
-    .limit(1);
-  if (existing) return existing;
+  const [session] = await db
+    .insert(gameSessions)
+    .values({ sessionId: nanoid(), puzzleId, playerId })
+    .onConflictDoUpdate({
+      target: [gameSessions.puzzleId, gameSessions.playerId],
+      set: { playerId: sql`${gameSessions.playerId}` },
+    })
+    .returning();
 
-  const sessionId = nanoid();
-  await db.insert(gameSessions).values({ sessionId, puzzleId, playerId });
-  const [created] = await db.select().from(gameSessions).where(eq(gameSessions.sessionId, sessionId)).limit(1);
-  return created!;
+  return session!;
 }
 
 // The ONLY code path allowed to assemble a client-facing payload - reused by
@@ -61,20 +65,23 @@ export async function getClientSafeGameState(
 ): Promise<ClientGameState> {
   const session = await getOrCreateSession(db, playerId, puzzleId);
 
-  const groups = await db.select().from(puzzleGroups).where(eq(puzzleGroups.puzzleId, puzzleId));
-  const members = await db.select().from(puzzleGroupMembers).where(eq(puzzleGroupMembers.puzzleId, puzzleId));
+  // Independent reads, batched into one round trip (see loadContentPool for
+  // the same pattern/rationale).
+  const [groups, members, solvedRows] = await db.batch([
+    db.select().from(puzzleGroups).where(eq(puzzleGroups.puzzleId, puzzleId)),
+    db.select().from(puzzleGroupMembers).where(eq(puzzleGroupMembers.puzzleId, puzzleId)),
+    db
+      .select()
+      .from(solvedPuzzleGroups)
+      .where(eq(solvedPuzzleGroups.sessionId, session.sessionId))
+      .orderBy(asc(solvedPuzzleGroups.solveOrder)),
+  ]);
 
   const membersByGroupId = new Map<string, ClientWord[]>();
   for (const m of members) {
     if (!membersByGroupId.has(m.puzzleGroupId)) membersByGroupId.set(m.puzzleGroupId, []);
     membersByGroupId.get(m.puzzleGroupId)!.push({ wordId: m.wordId, displayText: m.displayText });
   }
-
-  const solvedRows = await db
-    .select()
-    .from(solvedPuzzleGroups)
-    .where(eq(solvedPuzzleGroups.sessionId, session.sessionId))
-    .orderBy(asc(solvedPuzzleGroups.solveOrder));
 
   const groupById = new Map(groups.map((g) => [g.puzzleGroupId, g]));
 

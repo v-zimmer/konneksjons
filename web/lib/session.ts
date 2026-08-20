@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { players } from "@/db/schema";
 import { PLAYER_COOKIE } from "@/lib/player-cookie";
@@ -13,6 +13,10 @@ import { PLAYER_COOKIE } from "@/lib/player-cookie";
 // middleware.ts sets it before any route handles the request, since Server
 // Components (unlike Route Handlers) aren't allowed to set cookies. This
 // function's only job is to make sure the players row exists.
+//
+// One upsert instead of a select-then-branch: the DB (Turso) is remote, so
+// every extra round trip is a full network hop, not just a query-planner
+// cost - see the perf investigation in konneksjons_deployment memory.
 export async function getOrCreatePlayerId(): Promise<string> {
   const cookieStore = await cookies();
   const playerId = cookieStore.get(PLAYER_COOKIE)?.value;
@@ -20,15 +24,13 @@ export async function getOrCreatePlayerId(): Promise<string> {
     throw new Error("Missing player cookie - middleware.ts should have set it before this ran.");
   }
 
-  const [row] = await db.select().from(players).where(eq(players.playerId, playerId)).limit(1);
-  if (row) {
-    await db
-      .update(players)
-      .set({ lastSeenAt: sql`(datetime('now'))` })
-      .where(eq(players.playerId, playerId));
-  } else {
-    await db.insert(players).values({ playerId });
-  }
+  await db
+    .insert(players)
+    .values({ playerId })
+    .onConflictDoUpdate({
+      target: players.playerId,
+      set: { lastSeenAt: sql`(datetime('now'))` },
+    });
 
   return playerId;
 }
