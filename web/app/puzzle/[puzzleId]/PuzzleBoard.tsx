@@ -6,6 +6,7 @@ import { COLOR_HEX, type ColorKey } from "@/lib/puzzle/colors";
 import { shuffle, createRng } from "@/lib/puzzle/rng";
 import type { SerializedGameState, SerializedGroup, SerializedWord } from "@/lib/puzzle/serialize";
 import Wordmark from "@/components/Wordmark";
+import FitText from "@/components/FitText";
 
 type Phase = "idle" | "submitting";
 
@@ -158,13 +159,13 @@ export default function PuzzleBoard({ initialState }: { initialState: Serialized
               key={word.word_id}
               onClick={() => dispatch({ type: "toggle", wordId: word.word_id })}
               disabled={phase === "submitting"}
-              className={`flex aspect-square items-center justify-center rounded-lg border p-2 text-center text-sm font-semibold uppercase transition ${
+              className={`flex aspect-[1.9/1] items-center justify-center overflow-hidden rounded-lg border px-2 text-center font-semibold uppercase transition ${
                 selected.includes(word.word_id)
                   ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
                   : "border-zinc-300 bg-zinc-100 hover:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
               }`}
             >
-              {word.display_text}
+              <FitText text={word.display_text} />
             </button>
           ))}
         </div>
