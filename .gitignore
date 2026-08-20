@@ -4,3 +4,5 @@ data/export/
 data/raw/ikea_us_2025_products.jsonl
 data/processed/
 __pycache__/
+
+.vercel
