@@ -10,8 +10,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ puzzle
   try {
     const { puzzleId } = await params;
     const playerId = await getOrCreatePlayerId();
-    await resignPuzzle(db, playerId, puzzleId);
-    const state = await getClientSafeGameState(db, playerId, puzzleId);
+    const session = await resignPuzzle(db, playerId, puzzleId);
+    const state = await getClientSafeGameState(db, playerId, puzzleId, session);
     return NextResponse.json(serializeGameState(state));
   } catch (err) {
     return errorToResponse(err);

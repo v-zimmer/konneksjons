@@ -54,16 +54,23 @@ export async function getOrCreateSession(db: typeof Db, playerId: string, puzzle
   return session!;
 }
 
+export type SessionRow = Awaited<ReturnType<typeof getOrCreateSession>>;
+
 // The ONLY code path allowed to assemble a client-facing payload - reused by
 // every API route and by the puzzle page's Server Component, per plan §3.
 // Re-derives everything from the DB on every call; never trusts a cached
 // notion of game state.
+//
+// `knownSession` lets a caller that just wrote to the session (submitGuess,
+// resignPuzzle) pass along the resulting row instead of this function
+// re-fetching it - one more avoided round trip against the remote DB.
 export async function getClientSafeGameState(
   db: typeof Db,
   playerId: string,
-  puzzleId: string
+  puzzleId: string,
+  knownSession?: SessionRow
 ): Promise<ClientGameState> {
-  const session = await getOrCreateSession(db, playerId, puzzleId);
+  const session = knownSession ?? (await getOrCreateSession(db, playerId, puzzleId));
 
   // Independent reads, batched into one round trip (see loadContentPool for
   // the same pattern/rationale).

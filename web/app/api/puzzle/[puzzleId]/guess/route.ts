@@ -13,7 +13,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ puzzleI
     const body = await req.json().catch(() => ({}) as Record<string, unknown>);
 
     const guessResult = await submitGuess(db, playerId, puzzleId, (body as { word_ids?: unknown }).word_ids);
-    const state = await getClientSafeGameState(db, playerId, puzzleId);
+    const state = await getClientSafeGameState(db, playerId, puzzleId, guessResult.session);
 
     const matchedGroup =
       guessResult.result === "correct"

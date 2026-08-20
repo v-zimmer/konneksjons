@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { db as Db } from "@/db/client";
 import { puzzleGroupMembers, gameSessions, guesses, solvedPuzzleGroups } from "@/db/schema";
-import { getOrCreateSession } from "./game-state";
+import { getOrCreateSession, type SessionRow } from "./game-state";
 import { MISTAKES_MAX } from "./constants";
 import { ValidationError, GameOverError, DuplicateGuessError } from "./errors";
 
@@ -9,6 +9,10 @@ export type GuessResult = {
   result: "correct" | "incorrect";
   wasOneAway: boolean;
   matchedPuzzleGroupId: string | null;
+  // The session row after this guess's writes, computed in-memory rather
+  // than re-read - callers (the guess route) pass this into
+  // getClientSafeGameState to skip a redundant round trip to re-fetch it.
+  session: SessionRow;
 };
 
 function canonicalize(wordIds: string[]): string {
@@ -28,6 +32,12 @@ function validateWordIds(wordIds: unknown): string[] {
 // Guess validation is fully server-authoritative (plan §3): every call
 // re-reads mistake_count/status/puzzle_group_members from the DB, and
 // nothing from the client is trusted except the raw word_ids array.
+//
+// The independent reads are batched into one round trip, and the writes
+// (which don't depend on each other's results - everything they need is
+// already known from the reads/JS logic above them) are batched into
+// another, instead of each being its own sequential round trip against the
+// remote Turso DB.
 export async function submitGuess(
   db: typeof Db,
   playerId: string,
@@ -42,30 +52,35 @@ export async function submitGuess(
     throw new GameOverError(`Puzzle ${puzzleId} is already ${session.status}`);
   }
 
-  const members = await db.select().from(puzzleGroupMembers).where(eq(puzzleGroupMembers.puzzleId, puzzleId));
+  const sortedKey = canonicalize(wordIds);
+
+  const [members, existingGuessRows, solvedRows, allGuessRows] = await db.batch([
+    db.select().from(puzzleGroupMembers).where(eq(puzzleGroupMembers.puzzleId, puzzleId)),
+    db
+      .select()
+      .from(guesses)
+      .where(and(eq(guesses.sessionId, session.sessionId), eq(guesses.wordIdsSorted, sortedKey)))
+      .limit(1),
+    db.select().from(solvedPuzzleGroups).where(eq(solvedPuzzleGroups.sessionId, session.sessionId)),
+    db.select().from(guesses).where(eq(guesses.sessionId, session.sessionId)),
+  ] as unknown as Parameters<typeof db.batch>[0]) as [
+    typeof puzzleGroupMembers.$inferSelect[],
+    typeof guesses.$inferSelect[],
+    typeof solvedPuzzleGroups.$inferSelect[],
+    typeof guesses.$inferSelect[],
+  ];
+
   const knownWordIds = new Set(members.map((m) => m.wordId));
   for (const wordId of wordIds) {
     if (!knownWordIds.has(wordId)) {
       throw new ValidationError(`word_id ${wordId} does not belong to puzzle ${puzzleId}`);
     }
   }
-
-  const sortedKey = canonicalize(wordIds);
-  const [existingGuess] = await db
-    .select()
-    .from(guesses)
-    .where(and(eq(guesses.sessionId, session.sessionId), eq(guesses.wordIdsSorted, sortedKey)))
-    .limit(1);
-  if (existingGuess) {
+  if (existingGuessRows.length > 0) {
     throw new DuplicateGuessError("This combination was already guessed");
   }
 
-  const solvedRows = await db
-    .select()
-    .from(solvedPuzzleGroups)
-    .where(eq(solvedPuzzleGroups.sessionId, session.sessionId));
   const solvedGroupIds = new Set(solvedRows.map((r) => r.puzzleGroupId));
-
   const membersByGroupId = new Map<string, Set<string>>();
   for (const m of members) {
     if (!membersByGroupId.has(m.puzzleGroupId)) membersByGroupId.set(m.puzzleGroupId, new Set());
@@ -80,34 +95,43 @@ export async function submitGuess(
     }
   }
 
-  const guessCountRows = await db.select().from(guesses).where(eq(guesses.sessionId, session.sessionId));
-  const guessIndex = guessCountRows.length + 1;
+  const guessIndex = allGuessRows.length + 1;
 
   if (matchedPuzzleGroupId) {
-    await db.insert(guesses).values({
-      sessionId: session.sessionId,
-      guessIndex,
-      wordIdsSorted: sortedKey,
-      isCorrect: 1,
-      matchedPuzzleGroupId,
-      wasOneAway: 0,
-    });
-
     const newSolveOrder = solvedRows.length + 1;
-    await db.insert(solvedPuzzleGroups).values({
-      sessionId: session.sessionId,
-      puzzleGroupId: matchedPuzzleGroupId,
-      solveOrder: newSolveOrder,
-    });
+    const willWin = newSolveOrder === 4;
 
-    if (newSolveOrder === 4) {
-      await db
-        .update(gameSessions)
-        .set({ status: "won", completedAt: sql`(datetime('now'))` })
-        .where(eq(gameSessions.sessionId, session.sessionId));
-    }
+    const writes = [
+      db.insert(guesses).values({
+        sessionId: session.sessionId,
+        guessIndex,
+        wordIdsSorted: sortedKey,
+        isCorrect: 1,
+        matchedPuzzleGroupId,
+        wasOneAway: 0,
+      }),
+      db.insert(solvedPuzzleGroups).values({
+        sessionId: session.sessionId,
+        puzzleGroupId: matchedPuzzleGroupId,
+        solveOrder: newSolveOrder,
+      }),
+      ...(willWin
+        ? [
+            db
+              .update(gameSessions)
+              .set({ status: "won", completedAt: sql`(datetime('now'))` })
+              .where(eq(gameSessions.sessionId, session.sessionId)),
+          ]
+        : []),
+    ];
+    await db.batch(writes as unknown as Parameters<typeof db.batch>[0]);
 
-    return { result: "correct", wasOneAway: false, matchedPuzzleGroupId };
+    return {
+      result: "correct",
+      wasOneAway: false,
+      matchedPuzzleGroupId,
+      session: willWin ? { ...session, status: "won" } : session,
+    };
   }
 
   // "one away" = any UNSOLVED group shares exactly 3 of the 4 guessed ids.
@@ -122,37 +146,44 @@ export async function submitGuess(
     }
   }
 
-  await db.insert(guesses).values({
-    sessionId: session.sessionId,
-    guessIndex,
-    wordIdsSorted: sortedKey,
-    isCorrect: 0,
-    matchedPuzzleGroupId: null,
-    wasOneAway: wasOneAway ? 1 : 0,
-  });
-
   const newMistakeCount = session.mistakeCount + 1;
-  if (newMistakeCount >= MISTAKES_MAX) {
-    await db
-      .update(gameSessions)
-      .set({ mistakeCount: newMistakeCount, status: "lost", completedAt: sql`(datetime('now'))` })
-      .where(eq(gameSessions.sessionId, session.sessionId));
-  } else {
-    await db
-      .update(gameSessions)
-      .set({ mistakeCount: newMistakeCount })
-      .where(eq(gameSessions.sessionId, session.sessionId));
-  }
+  const willLose = newMistakeCount >= MISTAKES_MAX;
 
-  return { result: "incorrect", wasOneAway, matchedPuzzleGroupId: null };
+  await db.batch([
+    db.insert(guesses).values({
+      sessionId: session.sessionId,
+      guessIndex,
+      wordIdsSorted: sortedKey,
+      isCorrect: 0,
+      matchedPuzzleGroupId: null,
+      wasOneAway: wasOneAway ? 1 : 0,
+    }),
+    db
+      .update(gameSessions)
+      .set(
+        willLose
+          ? { mistakeCount: newMistakeCount, status: "lost", completedAt: sql`(datetime('now'))` }
+          : { mistakeCount: newMistakeCount }
+      )
+      .where(eq(gameSessions.sessionId, session.sessionId)),
+  ] as unknown as Parameters<typeof db.batch>[0]);
+
+  return {
+    result: "incorrect",
+    wasOneAway,
+    matchedPuzzleGroupId: null,
+    session: { ...session, mistakeCount: newMistakeCount, status: willLose ? "lost" : session.status },
+  };
 }
 
-export async function resignPuzzle(db: typeof Db, playerId: string, puzzleId: string): Promise<void> {
+export async function resignPuzzle(db: typeof Db, playerId: string, puzzleId: string): Promise<SessionRow> {
   const session = await getOrCreateSession(db, playerId, puzzleId);
-  if (session.status !== "in_progress") return;
+  if (session.status !== "in_progress") return session;
 
   await db
     .update(gameSessions)
     .set({ status: "resigned", completedAt: sql`(datetime('now'))` })
     .where(eq(gameSessions.sessionId, session.sessionId));
+
+  return { ...session, status: "resigned" };
 }
