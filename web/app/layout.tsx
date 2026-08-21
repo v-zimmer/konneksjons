@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Wordmark from "@/components/Wordmark";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,7 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <div className="flex flex-1 flex-col">{children}</div>
         <footer className="border-t border-zinc-200 px-4 py-3 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500">
-          KONNEKSJONS is an unaffiliated fan project. Not affiliated with, endorsed by, or connected to Inter IKEA Systems B.V. This website does not intend to promote IKEA, nor to mock it, but rather to appreciate its place in global culture.
+          <Wordmark /> is an unaffiliated fan project. Not affiliated with, endorsed by, or connected to Inter IKEA Systems B.V. This website does not intend to promote IKEA, nor to mock it, but rather to appreciate its place in global culture.
         </footer>
       </body>
     </html>

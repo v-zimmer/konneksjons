@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Wordmark from "@/components/Wordmark";
+import WavingExclamation from "@/components/WavingExclamation";
 
 export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wave, setWave] = useState(0);
 
   async function handlePlay() {
     setLoading(true);
@@ -28,11 +30,33 @@ export default function Home() {
       <h1 className="text-6xl font-bold tracking-tight">
         <Wordmark />
       </h1>
-      <p className="max-w-md text-zinc-600 dark:text-zinc-400">
-        Find groups of four IKEA product names that share something in
-        common. Four groups, one guess at a time - four mistakes and it&apos;s
-        over.
-      </p>
+      <div className="flex w-full max-w-md flex-col items-start text-left">
+        <h2 className="text-4xl font-bold tracking-tight">
+          <span
+            aria-hidden="true"
+            className="cursor-pointer"
+            onMouseEnter={() => setWave((w) => w + 1)}
+            onClick={() => setWave((w) => w + 1)}
+          >
+            Hej
+            <WavingExclamation trigger={wave} />
+          </span>
+          <span className="sr-only">Hej!</span>
+        </h2>
+        <p aria-hidden="true">&nbsp;</p>
+        <p>
+          Welcome to{" "}
+          <strong className="font-bold">
+            <Wordmark />
+          </strong>
+          ,
+        </p>
+        <p className="w-full text-zinc-600 dark:text-zinc-400">
+          Find groups of four IKEA product names that share something in
+          common. Four groups, one guess at a time - four mistakes and it&apos;s
+          over.
+        </p>
+      </div>
       <button
         onClick={handlePlay}
         disabled={loading}

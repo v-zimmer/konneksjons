@@ -24,3 +24,46 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* The "!" bar waves like a forearm pivoting from the dot (its "elbow") -
+   idle almost the whole cycle, brief wave near the end, then loops.
+   Centering is handled by the element's own left/margin (see
+   WavingExclamation.tsx), so this only ever needs to rotate. */
+@keyframes wave-hand {
+  0%,
+  92%,
+  100% {
+    transform: rotate(0deg);
+  }
+  93% {
+    transform: rotate(16deg);
+  }
+  95% {
+    transform: rotate(-12deg);
+  }
+  97% {
+    transform: rotate(10deg);
+  }
+  99% {
+    transform: rotate(0deg);
+  }
+}
+
+/* Same tilt sequence as wave-hand, compressed into one snappy pass instead
+   of a long mostly-idle cycle - played on demand when hovering/clicking
+   "Hej!" rather than looping. */
+@keyframes wave-hand-once {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(16deg);
+  }
+  50% {
+    transform: rotate(-12deg);
+  }
+  75% {
+    transform: rotate(10deg);
+  }
+}
